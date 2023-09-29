@@ -19,13 +19,13 @@ func main() {
 
   time.Sleep(time.Duration(sleepDuration) * time.Minute)
 
-  err := removeLabelFromPod()
+  err := removeAnnotationFromPod()
   if err != nil {
-    fmt.Printf("Error removing label: %v\n", err)
+    fmt.Printf("Error removing annotation: %v\n", err)
     os.Exit(1)
   }
 
-  fmt.Println("Label removed. Sleeping...")
+  fmt.Println("Annotation removed. Sleeping...")
   select {}
 }
 
@@ -39,7 +39,7 @@ func getSleepDuration() int {
   return sleepDuration
 }
 
-func removeLabelFromPod() error {
+func removeAnnotationFromPod() error {
   config, err := rest.InClusterConfig()
     fmt.Printf("Got incluster config")
   if err != nil {
@@ -54,8 +54,8 @@ func removeLabelFromPod() error {
 
   podName := os.Getenv("POD_NAME")
   namespace := os.Getenv("NAMESPACE")
-  holdLabel := os.Getenv("HOLD_LABEL")
-  fmt.Printf("Removing label %s from pod %s in namespace %s\n", holdLabel, podName, namespace)
+  holdAnnotation := os.Getenv("HOLD_ANNOTATION")
+  fmt.Printf("Removing annotation %s from pod %s in namespace %s\n", holdAnnotation, podName, namespace)
 
   retryErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
     pod, err := clientset.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
@@ -64,9 +64,9 @@ func removeLabelFromPod() error {
     }
     fmt.Printf("Got pod %s\n", pod.Name)
 
-    // Remove the label from pod labels
-    delete(pod.Labels, holdLabel)
-    fmt.Printf("Removed label %s from pod %s\n", holdLabel, pod.Name)
+    // Remove the annotation from pod annotations
+    delete(pod.Annotations, holdAnnotation)
+    fmt.Printf("Removed annotation %s from pod %s\n", holdAnnotation, pod.Name)
 
     _, err = clientset.CoreV1().Pods(namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
     return err

@@ -10,6 +10,8 @@ spec:
     metadata:
       labels:
         app: {{ include "karpenter-node-holder.name" . }}
+      annotations:
+        karpenter.sh/do-not-evict: true
     spec:
       serviceAccountName: {{ .Release.Name }}-sa
       containers:
@@ -18,8 +20,8 @@ spec:
         env:
         - name: SLEEP_DURATION
           value: "{{ .Values.sleepDurationMinutes }}"
-        - name: HOLD_LABEL
-          value: "{{ .Values.holdLabel }}"
+        - name: HOLD_ANNOTATION
+          value: "{{ .Values.holdAnnotation }}"
         - name: POD_NAME
           valueFrom:
             fieldRef:

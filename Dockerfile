@@ -7,7 +7,7 @@ RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -o karpenter-node-holder main.go
 
 ENV SLEEP_DURATION=15
-ENV HOLD_LABEL="karpenter.sh/do-not-evict"
+ENV HOLD_ANNOTAION="karpenter.sh/do-not-evict"
 
 # Define the command to run the application
 CMD ["./karpenter-node-holder"]

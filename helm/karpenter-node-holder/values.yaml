@@ -2,5 +2,5 @@
 image: 036703920845.dkr.ecr.us-east-1.amazonaws.com/karpenter-node-holder:latest
 
 sleepDurationMinutes: 2 # The sleep duration in minutes
-holdLabel: "karpenter.sh/do-not-evict"
+holdAnnotation: "karpenter.sh/do-not-evict"
 

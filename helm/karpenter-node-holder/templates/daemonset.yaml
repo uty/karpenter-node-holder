@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "karpenter-node-holder.name" . }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "karpenter-node-holder.name" . }}
+  template:
+    metadata:
+      labels:
+        app: {{ include "karpenter-node-holder.name" . }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-sa
+      containers:
+      - name: main
+        image: {{ .Values.image }}
+        env:
+        - name: SLEEP_DURATION
+          value: "{{ .Values.sleepDurationMinutes }}"
+        - name: HOLD_LABEL
+          value: "{{ .Values.holdLabel }}"
+        - name: NAMESPACE
+          value: "{{ .Release.Namespace }}"

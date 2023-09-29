@@ -1,0 +1,10 @@
+
+image:
+  repository: nginx
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+sleepDurationMinutes: 15 # The sleep duration in minutes
+holdLabel: "karpenter.sh/do-not-evict"
+

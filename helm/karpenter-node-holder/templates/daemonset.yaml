@@ -10,11 +10,9 @@ spec:
     metadata:
       labels:
         app: {{ include "karpenter-node-holder.name" . }}-ds
-      annotations:
-        karpenter.sh/do-not-evict: "true"
     spec:
       containers:
--       name: busybox-container
+      - name: busybox-container
         image: busybox:latest
         command:
         - sleep

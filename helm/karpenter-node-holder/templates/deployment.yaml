@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: {{ include "karpenter-node-holder.name" . }}-watcher
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: {{ include "karpenter-node-holder.name" . }}-watcher
@@ -22,11 +23,11 @@ spec:
         imagePullPolicy: Always
         env:
         - name: HOLD_DURATION
-          value: "{{ .Values.sleepDurationMinutes }}"
+          value: "{{ .Values.holdDurationMinutes }}"
         - name: HOLD_ANNOTATION
           value: "{{ .Values.holdAnnotation }}"
         - name: DAEMONSET_NAME
-          value: {{ include "karpenter-node-holder.name" }}-ds
+          value: {{ include "karpenter-node-holder.name" . }}-ds
         - name: NAMESPACE
           valueFrom:
             fieldRef:

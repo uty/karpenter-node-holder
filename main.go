@@ -13,7 +13,7 @@ import (
 
   "k8s.io/client-go/kubernetes"
   "k8s.io/client-go/rest"
-  "k8s.io/apimachinery/pkg/fields"
+  // "k8s.io/apimachinery/pkg/fields"
 )
 
 func main() {
@@ -34,17 +34,22 @@ func main() {
   daemonSetName := os.Getenv("DAEMONSET_NAME")
   namespace := os.Getenv("NAMESPACE")
 
-  selector, err := fields.ParseSelector("app=" + daemonSetName)
-  if err != nil {
-    fmt.Printf("Error parsing selector: %v\n", err)
-    os.Exit(1)
+  // selector, err := fields.ParseSelector("metadata.labels.app=" + daemonSetName)
+  // if err != nil {
+  //   fmt.Printf("Error parsing selector: %v\n", err)
+  //   os.Exit(1)
+  // }
+  optionsModifier := func(options *metav1.ListOptions) {
+    options.LabelSelector = fmt.Sprintf("app=%s", daemonSetName) // Replace with your label selector
   }
 
-  listWatcher := cache.NewListWatchFromClient(
+
+  listWatcher := cache.NewFilteredListWatchFromClient(
     clientset.CoreV1().RESTClient(),
     "pods",
     namespace,
-    selector,
+    optionsModifier,
+    // selector,
   )
 
   var mu sync.Mutex
@@ -119,6 +124,9 @@ func addAnnotationToPods(clientset *kubernetes.Clientset, namespace string, podL
 
   // Annotate all pods with "karpenter.sh/do-not-evict=true"
   for _, pod := range podList.Items {
+    if pod.Annotations == nil {
+      pod.Annotations = make(map[string]string)
+    }
     pod.Annotations[holdAnnotation] = "true"
     _, err := clientset.CoreV1().Pods(namespace).Update(context.TODO(), &pod, metav1.UpdateOptions{})
     if err != nil {
@@ -139,6 +147,9 @@ func addAnnotationToPods(clientset *kubernetes.Clientset, namespace string, podL
 
     // Remove the annotation from all pods
     for _, pod := range podList.Items {
+      if pod.Annotations == nil {
+        continue
+      }
       delete(pod.Annotations, holdAnnotation)
       _, err := clientset.CoreV1().Pods(namespace).Update(context.TODO(), &pod, metav1.UpdateOptions{})
       if err != nil {

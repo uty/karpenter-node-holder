@@ -1,32 +1,24 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: {{ include "karpenter-node-holder.name" . }}
+  name: {{ include "karpenter-node-holder.name" . }}-ds
 spec:
   selector:
     matchLabels:
-      app: {{ include "karpenter-node-holder.name" . }}
+      app: {{ include "karpenter-node-holder.name" . }}-ds
   template:
     metadata:
       labels:
-        app: {{ include "karpenter-node-holder.name" . }}
+        app: {{ include "karpenter-node-holder.name" . }}-ds
       annotations:
-        karpenter.sh/do-not-evict: true
+        karpenter.sh/do-not-evict: "true"
     spec:
-      serviceAccountName: {{ .Release.Name }}-sa
       containers:
-      - name: main
-        image: {{ .Values.image }}
-        env:
-        - name: SLEEP_DURATION
-          value: "{{ .Values.sleepDurationMinutes }}"
-        - name: HOLD_ANNOTATION
-          value: "{{ .Values.holdAnnotation }}"
-        - name: POD_NAME
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
+-       name: busybox-container
+        image: busybox:latest
+        command:
+        - sleep
+        - "99999999999"
+        resources:
+          requests:
+            memory: "10Mi"

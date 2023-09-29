@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "karpenter-node-holder.name" . }}-watcher
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "karpenter-node-holder.name" . }}-watcher
+  template:
+    metadata:
+      labels:
+        app: {{ include "karpenter-node-holder.name" . }}-watcher
+      annotations:
+        karpenter.sh/do-not-evict: "true"
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      serviceAccountName: {{ .Release.Name }}-sa
+      containers:
+      - name: main
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        env:
+        - name: HOLD_DURATION
+          value: "{{ .Values.sleepDurationMinutes }}"
+        - name: HOLD_ANNOTATION
+          value: "{{ .Values.holdAnnotation }}"
+        - name: DAEMONSET_NAME
+          value: {{ include "karpenter-node-holder.name" }}-ds
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace

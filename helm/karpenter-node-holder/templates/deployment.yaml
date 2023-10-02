@@ -11,8 +11,8 @@ spec:
     metadata:
       labels:
         app: {{ include "karpenter-node-holder.name" . }}-watcher
-      annotations:
-        karpenter.sh/do-not-evict: "true"
+      # annotations:
+      #   karpenter.sh/do-not-evict: "true"
     spec:
       nodeSelector:
         kubernetes.io/arch: arm64
@@ -26,9 +26,3 @@ spec:
           value: "{{ .Values.holdDurationMinutes }}"
         - name: HOLD_ANNOTATION
           value: "{{ .Values.holdAnnotation }}"
-        - name: DAEMONSET_NAME
-          value: {{ include "karpenter-node-holder.name" . }}-ds
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace

@@ -1,6 +1,6 @@
 
 image: 036703920845.dkr.ecr.us-east-1.amazonaws.com/karpenter-node-holder:controller
 
-holdDurationMinutes: 2 # The sleep duration in minutes
-holdAnnotation: "karpenter.sh/do-not-evict"
+holdDurationMinutes: 10 # The sleep duration in minutes
+holdAnnotation: "karpenter.sh/do-not-consolidate"
 

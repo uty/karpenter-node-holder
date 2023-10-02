@@ -1,7 +1,7 @@
 package main
 
 import (
-  "fmt"
+  "log"
   "os"
   "time"
   "strconv"
@@ -11,67 +11,55 @@ import (
   corev1 "k8s.io/api/core/v1"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+  "k8s.io/apimachinery/pkg/runtime"
+  "k8s.io/apimachinery/pkg/watch"
   "k8s.io/client-go/kubernetes"
   "k8s.io/client-go/rest"
-  // "k8s.io/apimachinery/pkg/fields"
 )
 
 func main() {
   config, err := rest.InClusterConfig()
-  fmt.Printf("Got incluster config")
+  l := log.New(os.Stdout, "", log.Ldate | log.Ltime)
+
+  l.Printf("Got incluster config\n")
   if err != nil {
-    fmt.Printf("Error creating in-cluster config: %v\n", err)
+    l.Printf("Error creating in-cluster config: %v\n", err)
     os.Exit(1)
   }
 
   clientset, err := kubernetes.NewForConfig(config)
-  fmt.Printf("Got clientset")
+  l.Printf("Got clientset")
   if err != nil {
-    fmt.Printf("Error creating Kubernetes clientset: %v\n", err)
+    l.Printf("Error creating Kubernetes clientset: %v\n", err)
     os.Exit(1)
   }
 
-  daemonSetName := os.Getenv("DAEMONSET_NAME")
-  namespace := os.Getenv("NAMESPACE")
-
-  // selector, err := fields.ParseSelector("metadata.labels.app=" + daemonSetName)
-  // if err != nil {
-  //   fmt.Printf("Error parsing selector: %v\n", err)
-  //   os.Exit(1)
-  // }
-  optionsModifier := func(options *metav1.ListOptions) {
-    options.LabelSelector = fmt.Sprintf("app=%s", daemonSetName) // Replace with your label selector
+  listWatcher := &cache.ListWatch{
+    ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+      return clientset.CoreV1().Nodes().List(context.TODO(), options)
+    },
+    WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+      return clientset.CoreV1().Nodes().Watch(context.TODO(), options)
+    },
   }
 
-
-  listWatcher := cache.NewFilteredListWatchFromClient(
-    clientset.CoreV1().RESTClient(),
-    "pods",
-    namespace,
-    optionsModifier,
-    // selector,
-  )
-
   var mu sync.Mutex
-  // Create a timer to remove the annotation after 10 minutes
   var timer *time.Timer
   var timerMutex sync.Mutex
 
   _, informer := cache.NewInformer(
     listWatcher,
-    &corev1.Pod{}, // Type of resource to watch
+    &corev1.Node{}, // Type of resource to watch
     time.Duration(0), // No resync
     cache.ResourceEventHandlerFuncs{
       AddFunc: func(obj interface{}) {
-        pod := obj.(*corev1.Pod)
-        fmt.Printf("Pod added: %s\n", pod.Name)
+        node := obj.(*corev1.Node)
+        l.Printf("Node added: %s\n", node.Name)
 
         // Stop the timer and then add annotation and start a new timer
-        addAnnotationToPods(clientset, namespace, listPods(clientset, namespace, daemonSetName), &mu, timer, &timerMutex)
+        pauseConsolidation(clientset, listNodes(clientset, l), &mu, &timer, &timerMutex, l)
       },
       // DeleteFunc: func(obj interface{}) {
-      //   pod := obj.(*corev1.Pod)
-      //   fmt.Printf("Pod deleted: %s\n", pod.Name)
       // },
     },
   )
@@ -83,7 +71,7 @@ func main() {
 
   // Wait for the informer to sync
   if !cache.WaitForCacheSync(stopCh, informer.HasSynced) {
-    fmt.Println("Timed out waiting for caches to sync")
+    l.Println("Timed out waiting for caches to sync")
     os.Exit(1)
   }
 
@@ -93,69 +81,130 @@ func main() {
   wg.Wait()
 }
 
-func getHoldDuration() time.Duration {
+func getHoldDuration(l *log.Logger) time.Duration {
   holdDurationStr := os.Getenv("HOLD_DURATION")
   holdDuration, err := strconv.Atoi(holdDurationStr)
   if err != nil {
-    fmt.Printf("Error parsing hold duration: %v\n", err)
+    l.Printf("Error parsing hold duration: %v\n", err)
     os.Exit(1)
   }
   return time.Duration(holdDuration)
 }
 
-func listPods(clientset *kubernetes.Clientset, namespace string, daemonSetName string) (*corev1.PodList) {
-  podList, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{
-    LabelSelector: "app=" + daemonSetName, // Replace with your label selector
+func listNodes(clientset *kubernetes.Clientset, l *log.Logger) (*corev1.NodeList) {
+  nodeList, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{
   })
   if err != nil {
-    fmt.Printf("Error listing pods: %v\n", err)
+    l.Printf("Error listing nodes: %v\n", err)
     os.Exit(1)
   }
-  return podList
+  return nodeList
 }
 
+func annotateNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, holdAnnotation string, l *log.Logger) {
+  for _, node := range nodeList.Items {
+    if node.Annotations == nil {
+      node.Annotations = make(map[string]string)
+    }
+    node.Annotations[holdAnnotation] = "true"
+    retryDelay := 5 * time.Second
+    retryCount := 0
+    maxRetries := 5
+    for {
+      _, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
+      if err == nil {
+        l.Printf("Successfully annotated node %s\n", node.Name)
+        break
+      } else {
+        l.Printf("Error annotating node %s: %v\n", node.Name, err)
+        if retryCount >= maxRetries {
+          l.Printf("Max retries reached, giving up on node %s\n", node.Name)
+          break
+        }
+        updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+        if err != nil {
+          l.Printf("Error updating node info %s: %v\n", node.Name, err)
+          break
+        }
+        node = *updatedNode
+        if node.Annotations == nil {
+          node.Annotations = make(map[string]string)
+        }
+        node.Annotations[holdAnnotation] = "true"
+        time.Sleep(retryDelay)
+        retryCount++
+      }
+    }
+  }
+}
 
-func addAnnotationToPods(clientset *kubernetes.Clientset, namespace string, podList *corev1.PodList, mu *sync.Mutex, timer *time.Timer, timerMutex *sync.Mutex) {
+func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, holdAnnotation string, l *log.Logger) {
+  for _, node := range nodeList.Items {
+    if node.Annotations == nil {
+      l.Printf("Node %s has no annotations, skipping\n", node.Name)
+      continue
+    }
+    delete(node.Annotations, holdAnnotation)
+    retryDelay := 5 * time.Second
+    retryCount := 0
+    maxRetries := 5
+    for {
+      _, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
+      if err == nil {
+        l.Printf("Successfully removed annotation from node %s\n", node.Name)
+        break
+      } else {
+        l.Printf("Error removing annotation from node %s: %v\n", node.Name, err)
+        if retryCount >= maxRetries {
+          l.Printf("Max retries reached, giving up on node %s\n", node.Name)
+          break
+        }
+        updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+        if err != nil {
+          l.Printf("Error updating node info %s: %v\n", node.Name, err)
+          break
+        }
+        node = *updatedNode
+        if node.Annotations == nil {
+          continue
+        }
+        delete(node.Annotations, holdAnnotation)
+        time.Sleep(retryDelay)
+        retryCount++
+      }
+    }
+  }
+}
+
+func pauseConsolidation(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, mu *sync.Mutex, timer **time.Timer, timerMutex *sync.Mutex, l *log.Logger) {
   holdAnnotation := os.Getenv("HOLD_ANNOTATION")
   mu.Lock()
   defer mu.Unlock()
 
-  fmt.Println("Adding annotation to all pods")
-
-  // Annotate all pods with "karpenter.sh/do-not-evict=true"
-  for _, pod := range podList.Items {
-    if pod.Annotations == nil {
-      pod.Annotations = make(map[string]string)
+  timerMutex.Lock()
+  if *timer != nil && (*timer).Stop() {
+    // Drain the timer's channel if it's still active
+    select {
+    case <-(*timer).C:
+    default:
     }
-    pod.Annotations[holdAnnotation] = "true"
-    _, err := clientset.CoreV1().Pods(namespace).Update(context.TODO(), &pod, metav1.UpdateOptions{})
-    if err != nil {
-      fmt.Printf("Error annotating pod %s: %v\n", pod.Name, err)
-    }
+    l.Printf("Stopping previous timer\n")
+  } else {
+    // Annotate all nodes with "karpenter.sh/do-not-consolidate=true"
+    l.Printf("Adding annotation %s to all nodes\n", holdAnnotation)
+    annotateNodes(clientset, nodeList, holdAnnotation, l)
   }
 
   // Start the timer to remove the annotation after holdDuration minutes
-  timerMutex.Lock()
-  if timer != nil {
-    timer.Stop() // Cancel the previous timer if it exists
-  }
-  timer = time.AfterFunc(getHoldDuration()*time.Minute, func() {
+  l.Printf("Starting timer to remove annotation in %d minutes\n", getHoldDuration(l))
+  *timer = time.AfterFunc(getHoldDuration(l)*time.Minute, func() {
     mu.Lock()
     defer mu.Unlock()
 
-    fmt.Println("Removing annotation from all pods")
+    l.Println("Removing annotation from all nodes")
 
-    // Remove the annotation from all pods
-    for _, pod := range podList.Items {
-      if pod.Annotations == nil {
-        continue
-      }
-      delete(pod.Annotations, holdAnnotation)
-      _, err := clientset.CoreV1().Pods(namespace).Update(context.TODO(), &pod, metav1.UpdateOptions{})
-      if err != nil {
-        fmt.Printf("Error removing annotation from pod %s: %v\n", pod.Name, err)
-      }
-    }
+    // Remove the annotation from all nodes
+    removeAnnotationFromNodes(clientset, nodeList, holdAnnotation, l)
   })
   timerMutex.Unlock()
 }

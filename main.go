@@ -130,7 +130,7 @@ func annotateNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, h
 			}
 			if node.Annotations[holdAnnotation] == "true" {
 				logger.Printf("Node %s already annotated, skipping\n", node.Name)
-				continue
+				break
 			}
 			node.Annotations[holdAnnotation] = "true"
 

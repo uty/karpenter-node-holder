@@ -18,24 +18,27 @@ import (
 )
 
 const (
+	// Initial delay before annotating nodes
+	INITIAL_DELAY = 30 * time.Second
+	// Maximum number of retries before giving up on annotating or removing an annotation from a node
 	MAX_RETRIES = 5
+	// Delay between retries
 	RETRY_DELAY = 5 * time.Second
 )
 
 func main() {
-	config, err := rest.InClusterConfig()
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
-
-	logger.Printf("Got incluster config\n")
+	config, err := rest.InClusterConfig()
 	if err != nil {
 		logger.Fatalf("Error creating in-cluster config: %v\n", err)
 	}
+	logger.Println("Got incluster config")
 
 	clientset, err := kubernetes.NewForConfig(config)
-	logger.Printf("Got clientset")
 	if err != nil {
 		logger.Fatalf("Error creating Kubernetes clientset: %v\n", err)
 	}
+	logger.Println("Got clientset")
 
 	listWatcher := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -59,18 +62,21 @@ func main() {
 				node := obj.(*corev1.Node)
 				logger.Printf("Node added: %s\n", node.Name)
 
+				time.Sleep(INITIAL_DELAY)
 				// Stop the timer and then add annotation and start a new timer
-				pauseConsolidation(clientset, listNodes(clientset, logger), &mu, &timer, &timerMutex, logger)
+				pauseConsolidation(clientset, &mu, &timer, &timerMutex, logger)
 			},
 			// DeleteFunc: func(obj interface{}) {
 			// },
 		},
 	)
+	logger.Println("Created informer")
 	// Start the informer to begin watching for changes
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 
 	go informer.Run(stopCh)
+	logger.Println("Started informer")
 
 	// Wait for the informer to sync
 	if !cache.WaitForCacheSync(stopCh, informer.HasSynced) {
@@ -171,12 +177,19 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 	for _, node := range nodeList.Items {
 		retryCount := 0
 		for {
+			updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+			if err != nil {
+				logger.Printf("Error updating node info %s: %v\n", node.Name, err)
+				break
+			}
+			node = *updatedNode
+
 			if node.Annotations == nil {
 				logger.Printf("Node %s has no annotations, skipping\n", node.Name)
 				break
 			}
 			delete(node.Annotations, holdAnnotation)
-			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
+			_, err = clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
 			if err == nil {
 				logger.Printf("Successfully removed annotation from node %s\n", node.Name)
 				break
@@ -189,13 +202,6 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 
 				time.Sleep(RETRY_DELAY)
 				retryCount++
-
-				updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-				if err != nil {
-					logger.Printf("Error updating node info %s: %v\n", node.Name, err)
-					break
-				}
-				node = *updatedNode
 			}
 		}
 	}
@@ -207,12 +213,11 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 // Parameters:
 //
 //	clientset: Kubernetes clientset
-//	nodeList: List of nodes
 //	mu: Mutex to lock before updating the timer
 //	timer: Pointer to the timer
 //	timerMutex: Mutex to lock before updating the timer
 //	logger: Logger
-func pauseConsolidation(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, mu *sync.Mutex, timer **time.Timer, timerMutex *sync.Mutex, logger *log.Logger) {
+func pauseConsolidation(clientset *kubernetes.Clientset, mu *sync.Mutex, timer **time.Timer, timerMutex *sync.Mutex, logger *log.Logger) {
 	holdAnnotation := os.Getenv("HOLD_ANNOTATION")
 	mu.Lock()
 	defer mu.Unlock()
@@ -228,7 +233,7 @@ func pauseConsolidation(clientset *kubernetes.Clientset, nodeList *corev1.NodeLi
 	}
 	// Annotate all nodes with "karpenter.sh/do-not-consolidate=true"
 	logger.Printf("Adding annotation %s to all nodes\n", holdAnnotation)
-	annotateNodes(clientset, nodeList, holdAnnotation, logger)
+	annotateNodes(clientset, listNodes(clientset, logger), holdAnnotation, logger)
 
 	// Start the timer to remove the annotation after holdDuration minutes
 	logger.Printf("Starting timer to remove annotation in %d minutes\n", getHoldDuration(logger))
@@ -239,7 +244,7 @@ func pauseConsolidation(clientset *kubernetes.Clientset, nodeList *corev1.NodeLi
 		logger.Println("Removing annotation from all nodes")
 
 		// Remove the annotation from all nodes
-		removeAnnotationFromNodes(clientset, nodeList, holdAnnotation, logger)
+		removeAnnotationFromNodes(clientset, listNodes(clientset, logger), holdAnnotation, logger)
 	})
 	timerMutex.Unlock()
 }

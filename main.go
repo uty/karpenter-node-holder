@@ -2,19 +2,21 @@ package main
 
 import (
 	"context"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
 	"log"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -95,6 +97,24 @@ func main() {
 	// Use a WaitGroup to keep the program running
 	var wg sync.WaitGroup
 	wg.Add(1)
+	// Signal handler to gracefully shut down
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		defer wg.Done()
+		sig := <-signalCh
+		logger.Printf("Received signal: %v\n", sig)
+
+		// Stop the informer by closing the stop channel
+		close(stopCh)
+
+		// Remove the annotation from all nodes before exiting
+		mu.Lock()
+		defer mu.Unlock()
+		holdAnnotation := os.Getenv("HOLD_ANNOTATION")
+		removeAnnotationFromNodes(clientset, listNodes(clientset, logger), holdAnnotation, logger)
+		logger.Println("Removed annotation from all nodes before exiting")
+	}()
 	wg.Wait()
 }
 

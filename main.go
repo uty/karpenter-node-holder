@@ -128,6 +128,10 @@ func annotateNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, h
 			if node.Annotations == nil {
 				node.Annotations = make(map[string]string)
 			}
+			if node.Annotations[holdAnnotation] == "true" {
+				logger.Printf("Node %s already annotated, skipping\n", node.Name)
+				continue
+			}
 			node.Annotations[holdAnnotation] = "true"
 
 			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
@@ -221,11 +225,10 @@ func pauseConsolidation(clientset *kubernetes.Clientset, nodeList *corev1.NodeLi
 		default:
 		}
 		logger.Printf("Stopping previous timer\n")
-	} else {
-		// Annotate all nodes with "karpenter.sh/do-not-consolidate=true"
-		logger.Printf("Adding annotation %s to all nodes\n", holdAnnotation)
-		annotateNodes(clientset, nodeList, holdAnnotation, logger)
 	}
+	// Annotate all nodes with "karpenter.sh/do-not-consolidate=true"
+	logger.Printf("Adding annotation %s to all nodes\n", holdAnnotation)
+	annotateNodes(clientset, nodeList, holdAnnotation, logger)
 
 	// Start the timer to remove the annotation after holdDuration minutes
 	logger.Printf("Starting timer to remove annotation in %d minutes\n", getHoldDuration(logger))

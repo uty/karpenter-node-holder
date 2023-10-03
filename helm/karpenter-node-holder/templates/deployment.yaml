@@ -14,6 +14,13 @@ spec:
       # annotations:
       #   karpenter.sh/do-not-evict: "true"
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: karpenter.sh/provisioner-name
+                operator: DoesNotExist
       nodeSelector:
         kubernetes.io/arch: arm64
       serviceAccountName: {{ .Release.Name }}-sa

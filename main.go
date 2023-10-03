@@ -49,6 +49,12 @@ func main() {
 		},
 	}
 
+	// Record the UIDs of all present nodes so we don't process them when we just started
+	var recordedUIDs = make(map[string]bool)
+	for _, node := range listNodes(clientset, logger).Items {
+		recordedUIDs[string(node.UID)] = true
+	}
+
 	var mu sync.Mutex
 	var timer *time.Timer
 	var timerMutex sync.Mutex
@@ -60,11 +66,14 @@ func main() {
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				node := obj.(*corev1.Node)
-				logger.Printf("Node added: %s\n", node.Name)
+				// Skip nodes that were already running when we started
+				if !recordedUIDs[string(node.UID)] {
+					logger.Printf("Node added: %s\n", node.Name)
 
-				time.Sleep(INITIAL_DELAY)
-				// Stop the timer and then add annotation and start a new timer
-				pauseConsolidation(clientset, &mu, &timer, &timerMutex, logger)
+					time.Sleep(INITIAL_DELAY)
+					// Stop the timer and then add annotation and start a new timer
+					pauseConsolidation(clientset, &mu, &timer, &timerMutex, logger)
+				}
 			},
 			// DeleteFunc: func(obj interface{}) {
 			// },

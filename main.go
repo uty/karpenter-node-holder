@@ -173,7 +173,7 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 		for {
 			if node.Annotations == nil {
 				logger.Printf("Node %s has no annotations, skipping\n", node.Name)
-				continue
+				break
 			}
 			delete(node.Annotations, holdAnnotation)
 			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})

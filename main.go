@@ -17,21 +17,24 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+const (
+	MAX_RETRIES = 5
+	RETRY_DELAY = 5 * time.Second
+)
+
 func main() {
 	config, err := rest.InClusterConfig()
 	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
 
 	logger.Printf("Got incluster config\n")
 	if err != nil {
-		logger.Printf("Error creating in-cluster config: %v\n", err)
-		os.Exit(1)
+		logger.Fatalf("Error creating in-cluster config: %v\n", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(config)
 	logger.Printf("Got clientset")
 	if err != nil {
-		logger.Printf("Error creating Kubernetes clientset: %v\n", err)
-		os.Exit(1)
+		logger.Fatalf("Error creating Kubernetes clientset: %v\n", err)
 	}
 
 	listWatcher := &cache.ListWatch{
@@ -71,8 +74,7 @@ func main() {
 
 	// Wait for the informer to sync
 	if !cache.WaitForCacheSync(stopCh, informer.HasSynced) {
-		logger.Println("Timed out waiting for caches to sync")
-		os.Exit(1)
+		logger.Fatalf("Timed out waiting for caches to sync")
 	}
 
 	// Use a WaitGroup to keep the program running
@@ -91,8 +93,7 @@ func getHoldDuration(logger *log.Logger) time.Duration {
 	holdDurationStr := os.Getenv("HOLD_DURATION")
 	holdDuration, err := strconv.Atoi(holdDurationStr)
 	if err != nil {
-		logger.Printf("Error parsing hold duration: %v\n", err)
-		os.Exit(1)
+		logger.Fatalf("Error parsing hold duration: %v\n", err)
 	}
 	return time.Duration(holdDuration)
 }
@@ -107,8 +108,7 @@ func getHoldDuration(logger *log.Logger) time.Duration {
 func listNodes(clientset *kubernetes.Clientset, logger *log.Logger) *corev1.NodeList {
 	nodeList, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		logger.Printf("Error listing nodes: %v\n", err)
-		os.Exit(1)
+		logger.Fatalf("Error listing nodes: %v\n", err)
 	}
 	return nodeList
 }
@@ -123,36 +123,33 @@ func listNodes(clientset *kubernetes.Clientset, logger *log.Logger) *corev1.Node
 //	logger: Logger
 func annotateNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, holdAnnotation string, logger *log.Logger) {
 	for _, node := range nodeList.Items {
-		if node.Annotations == nil {
-			node.Annotations = make(map[string]string)
-		}
-		node.Annotations[holdAnnotation] = "true"
-		retryDelay := 5 * time.Second
 		retryCount := 0
-		maxRetries := 5
 		for {
+			if node.Annotations == nil {
+				node.Annotations = make(map[string]string)
+			}
+			node.Annotations[holdAnnotation] = "true"
+
 			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
 			if err == nil {
 				logger.Printf("Successfully annotated node %s\n", node.Name)
 				break
 			} else {
 				logger.Printf("Error annotating node %s: %v\n", node.Name, err)
-				if retryCount >= maxRetries {
+				if retryCount >= MAX_RETRIES {
 					logger.Printf("Max retries reached, giving up on node %s\n", node.Name)
 					break
 				}
+
+				time.Sleep(RETRY_DELAY)
+				retryCount++
+
 				updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 				if err != nil {
 					logger.Printf("Error updating node info %s: %v\n", node.Name, err)
 					break
 				}
 				node = *updatedNode
-				if node.Annotations == nil {
-					node.Annotations = make(map[string]string)
-				}
-				node.Annotations[holdAnnotation] = "true"
-				time.Sleep(retryDelay)
-				retryCount++
 			}
 		}
 	}
@@ -168,37 +165,33 @@ func annotateNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, h
 //	logger: Logger
 func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1.NodeList, holdAnnotation string, logger *log.Logger) {
 	for _, node := range nodeList.Items {
-		if node.Annotations == nil {
-			logger.Printf("Node %s has no annotations, skipping\n", node.Name)
-			continue
-		}
-		delete(node.Annotations, holdAnnotation)
-		retryDelay := 5 * time.Second
 		retryCount := 0
-		maxRetries := 5
 		for {
+			if node.Annotations == nil {
+				logger.Printf("Node %s has no annotations, skipping\n", node.Name)
+				continue
+			}
+			delete(node.Annotations, holdAnnotation)
 			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
 			if err == nil {
 				logger.Printf("Successfully removed annotation from node %s\n", node.Name)
 				break
 			} else {
 				logger.Printf("Error removing annotation from node %s: %v\n", node.Name, err)
-				if retryCount >= maxRetries {
+				if retryCount >= MAX_RETRIES {
 					logger.Printf("Max retries reached, giving up on node %s\n", node.Name)
 					break
 				}
+
+				time.Sleep(RETRY_DELAY)
+				retryCount++
+
 				updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
 				if err != nil {
 					logger.Printf("Error updating node info %s: %v\n", node.Name, err)
 					break
 				}
 				node = *updatedNode
-				if node.Annotations == nil {
-					continue
-				}
-				delete(node.Annotations, holdAnnotation)
-				time.Sleep(retryDelay)
-				retryCount++
 			}
 		}
 	}

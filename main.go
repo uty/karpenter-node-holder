@@ -156,7 +156,7 @@ func getInitialDelay() time.Duration {
 //	clientset: Kubernetes clientset
 //	logger: Logger
 //
-//	Returns: List of nodes
+// Returns: List of nodes
 func listNodes(clientset *kubernetes.Clientset, logger *log.Logger) *corev1.NodeList {
 	nodeList, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
@@ -223,19 +223,12 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 	for _, node := range nodeList.Items {
 		retryCount := 0
 		for {
-			updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
-			if err != nil {
-				logger.Printf("Error updating node info %s: %v\n", node.Name, err)
-				break
-			}
-			node = *updatedNode
-
-			if node.Annotations == nil {
-				logger.Printf("Node %s has no annotations, skipping\n", node.Name)
+			if node.Annotations == nil || node.Annotations[holdAnnotation] != "true" {
+				logger.Printf("Node %s doesn't have the annotation, skipping\n", node.Name)
 				break
 			}
 			delete(node.Annotations, holdAnnotation)
-			_, err = clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
+			_, err := clientset.CoreV1().Nodes().Update(context.TODO(), &node, metav1.UpdateOptions{})
 			if err == nil {
 				logger.Printf("Successfully removed annotation from node %s\n", node.Name)
 				break
@@ -248,6 +241,13 @@ func removeAnnotationFromNodes(clientset *kubernetes.Clientset, nodeList *corev1
 
 				time.Sleep(RETRY_DELAY)
 				retryCount++
+
+				updatedNode, err := clientset.CoreV1().Nodes().Get(context.TODO(), node.Name, metav1.GetOptions{})
+				if err != nil {
+					logger.Printf("Error updating node info %s: %v\n", node.Name, err)
+					break
+				}
+				node = *updatedNode
 			}
 		}
 	}

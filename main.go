@@ -124,7 +124,7 @@ func main() {
 	wg.Wait()
 }
 
-// Get the hold duration from the environment variable
+// Get the hold duration from the environment variable. This is the duration of how long to pause consolidation
 // Parameters:
 //
 //	logger: Logger
@@ -139,6 +139,8 @@ func getHoldDuration(logger *log.Logger) time.Duration {
 	return time.Duration(holdDuration) * time.Minute
 }
 
+// Get the initial delay from the environment variable. This is the duration of how long to wait before pausing consolidation
+// Returns: Initial delay duration
 func getInitialDelay() time.Duration {
 	initialDelayStr := os.Getenv("INITIAL_DELAY")
 	initialDelay, err := strconv.Atoi(initialDelayStr)

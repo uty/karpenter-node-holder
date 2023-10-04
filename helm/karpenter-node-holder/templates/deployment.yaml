@@ -31,7 +31,7 @@ spec:
         imagePullPolicy: Always
         env:
         - name: HOLD_DURATION
-          value: "{{ .Values.holdDurationMinutes }}"
+          value: "{{ .Values.holdDuration }}"
         - name: HOLD_ANNOTATION
           value: "{{ .Values.holdAnnotation }}"
         - name: INITIAL_DELAY

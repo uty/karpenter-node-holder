@@ -34,3 +34,5 @@ spec:
           value: "{{ .Values.holdDurationMinutes }}"
         - name: HOLD_ANNOTATION
           value: "{{ .Values.holdAnnotation }}"
+        - name: INITIAL_DELAY
+          value: "{{ .Values.initialDelay }}"

@@ -72,7 +72,7 @@ func main() {
 				if !recordedUIDs[string(node.UID)] {
 					logger.Printf("Node added: %s\n", node.Name)
 
-					time.Sleep(INITIAL_DELAY)
+					time.Sleep(getInitialDelay())
 					// Stop the timer and then add annotation and start a new timer
 					pauseConsolidation(clientset, &mu, &timer, &timerMutex, logger)
 				}
@@ -136,7 +136,16 @@ func getHoldDuration(logger *log.Logger) time.Duration {
 	if err != nil {
 		logger.Fatalf("Error parsing hold duration: %v\n", err)
 	}
-	return time.Duration(holdDuration)
+	return time.Duration(holdDuration) * time.Minute
+}
+
+func getInitialDelay() time.Duration {
+	initialDelayStr := os.Getenv("INITIAL_DELAY")
+	initialDelay, err := strconv.Atoi(initialDelayStr)
+	if err != nil {
+		return INITIAL_DELAY
+	}
+	return time.Duration(initialDelay) * time.Second
 }
 
 // List all nodes
@@ -271,8 +280,8 @@ func pauseConsolidation(clientset *kubernetes.Clientset, mu *sync.Mutex, timer *
 	annotateNodes(clientset, listNodes(clientset, logger), holdAnnotation, logger)
 
 	// Start the timer to remove the annotation after holdDuration minutes
-	logger.Printf("Starting timer to remove annotation in %d minutes\n", getHoldDuration(logger))
-	*timer = time.AfterFunc(getHoldDuration(logger)*time.Minute, func() {
+	logger.Printf("Starting timer to remove annotation in %v\n", getHoldDuration(logger))
+	*timer = time.AfterFunc(getHoldDuration(logger), func() {
 		mu.Lock()
 		defer mu.Unlock()
 

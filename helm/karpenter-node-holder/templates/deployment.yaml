@@ -24,6 +24,7 @@ spec:
       nodeSelector:
         kubernetes.io/arch: arm64
       serviceAccountName: {{ .Release.Name }}-sa
+      terminationGracePeriodSeconds: 120
       containers:
       - name: main
         image: {{ .Values.image }}

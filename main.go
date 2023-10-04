@@ -77,8 +77,10 @@ func main() {
 					pauseConsolidation(clientset, &mu, &timer, &timerMutex, logger)
 				}
 			},
-			// DeleteFunc: func(obj interface{}) {
-			// },
+			DeleteFunc: func(obj interface{}) {
+				node := obj.(*corev1.Node)
+				logger.Printf("Node deleted: %s\n", node.Name)
+			},
 		},
 	)
 	logger.Println("Created informer")
@@ -99,7 +101,11 @@ func main() {
 	wg.Add(1)
 	// Signal handler to gracefully shut down
 	signalCh := make(chan os.Signal, 1)
-	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(signalCh,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
 	go func() {
 		defer wg.Done()
 		sig := <-signalCh

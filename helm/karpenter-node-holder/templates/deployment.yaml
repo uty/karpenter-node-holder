@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "karpenter-node-holder.name" . }}-watcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "karpenter-node-holder.name" . }}-watcher
+  template:
+    metadata:
+      labels:
+        app: {{ include "karpenter-node-holder.name" . }}-watcher
+      # annotations:
+      #   karpenter.sh/do-not-evict: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: karpenter.sh/provisioner-name
+                operator: DoesNotExist
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      serviceAccountName: {{ .Release.Name }}-sa
+      terminationGracePeriodSeconds: 120
+      containers:
+      - name: main
+        image: {{ .Values.image }}
+        imagePullPolicy: Always
+        env:
+        - name: HOLD_DURATION
+          value: "{{ .Values.holdDuration }}"
+        - name: HOLD_ANNOTATION
+          value: "{{ .Values.holdAnnotation }}"
+        - name: INITIAL_DELAY
+          value: "{{ .Values.initialDelay }}"

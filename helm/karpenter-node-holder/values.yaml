@@ -1,6 +1,4 @@
-
 image: 036703920845.dkr.ecr.us-east-1.amazonaws.com/karpenter-node-holder:controller
-
 initialDelay: 60 # Time in seconds to wait before applying the annotation
 holdDuration: 20 # Time in minutes to hold the annotation on nodes
 holdAnnotation: "karpenter.sh/do-not-consolidate"

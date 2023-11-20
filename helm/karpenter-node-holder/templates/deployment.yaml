@@ -11,8 +11,6 @@ spec:
     metadata:
       labels:
         app: {{ include "karpenter-node-holder.name" . }}-watcher
-      # annotations:
-      #   karpenter.sh/do-not-evict: "true"
     spec:
       affinity:
         nodeAffinity:

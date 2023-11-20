@@ -267,8 +267,9 @@ func pauseConsolidation(clientset *kubernetes.Clientset, mu *sync.Mutex, timer *
 	holdAnnotation := os.Getenv("HOLD_ANNOTATION")
 	mu.Lock()
 	defer mu.Unlock()
-
 	timerMutex.Lock()
+	defer timerMutex.Unlock()
+
 	if *timer != nil && (*timer).Stop() {
 		// Drain the timer's channel if it's still active
 		select {
@@ -292,5 +293,4 @@ func pauseConsolidation(clientset *kubernetes.Clientset, mu *sync.Mutex, timer *
 		// Remove the annotation from all nodes
 		removeAnnotationFromNodes(clientset, listNodes(clientset, logger), holdAnnotation, logger)
 	})
-	timerMutex.Unlock()
 }
